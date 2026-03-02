@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:0;background:#fafafa}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px;background:#111;color:#fff}
+    .wrap{padding:16px;max-width:1100px;margin:0 auto}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .card{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.08);padding:14px}
+    input,select,button{padding:10px;border-radius:12px;border:1px solid #e5e5e5}
+    button{border:0;background:#111;color:#fff;font-weight:800;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+    th,td{padding:10px;border-bottom:1px solid #eee;vertical-align:top}
+    .muted{opacity:.7}
+  </style>
+</head>
+<body>
+<header>
+  <div><strong>Auto Lead Bot</strong> <span class="muted">Admin</span></div>
+  <div class="row">
+    <a href="/admin/logout" style="color:#fff;text-decoration:none">Logout</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="row">
+    <div class="card" style="flex:1;min-width:320px">
+      <h3 style="margin:0 0 10px">Tenantit (autoliikkeet)</h3>
+      <div class="row">
+        <input id="t_id" placeholder="id (esim. autoliike1)" />
+        <input id="t_name" placeholder="Nimi" />
+        <input id="t_email" placeholder="Ilmoitus-email (valinn.)" />
+        <button id="t_add">Lisää</button>
+      </div>
+      <div style="margin-top:10px">
+        <select id="tenantSelect"></select>
+        <button id="refresh">Päivitä</button>
+      </div>
+
+      <div style="margin-top:12px">
+        <div><strong>Widget upotus:</strong></div>
+        <pre id="embed" style="white-space:pre-wrap;background:#f6f6f6;padding:10px;border-radius:12px"></pre>
+      </div>
+    </div>
+
+    <div class="card" style="flex:2;min-width:360px">
+      <h3 style="margin:0 0 10px">Liidit</h3>
+      <div id="leadMeta" class="muted"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Aika</th>
+            <th>Asiakas</th>
+            <th>Kiinnostus</th>
+            <th>Yhteys</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="leads"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const tenantSelect = document.getElementById("tenantSelect");
+  const leadsTbody = document.getElementById("leads");
+  const leadMeta = document.getElementById("leadMeta");
+  const embed = document.getElementById("embed");
+
+  function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  async function loadTenants() {
+    const r = await fetch("/api/admin/tenants");
+    const j = await r.json();
+    tenantSelect.innerHTML = "";
+    j.tenants.forEach(t => {
+      const o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = `${t.name} (${t.id})`;
+      tenantSelect.appendChild(o);
+    });
+    if (!tenantSelect.value && j.tenants[0]) tenantSelect.value = j.tenants[0].id;
+    updateEmbed();
+  }
+
+  function updateEmbed() {
+    const tenant = tenantSelect.value || "demo";
+    const base = location.origin;
+    embed.textContent = `<script src="${base}/public/widget.js" data-tenant="${tenant}" data-base="${base}"><\/script>`;
+  }
+
+  async function loadLeads() {
+    const tenant = tenantSelect.value || "demo";
+    updateEmbed();
+    const r = await fetch(`/api/admin/leads?tenant=${encodeURIComponent(tenant)}`);
+    const j = await r.json();
+    leadMeta.textContent = `${j.tenant.name} — ${j.leads.length} liidiä (max 500 näytetään)`;
+    leadsTbody.innerHTML = "";
+    j.leads.forEach(l => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${esc(l.created_at)}</td>
+        <td>
+          <div><strong>${esc(l.customer_name || "-")}</strong></div>
+          <div class="muted">${esc(l.notes || "")}</div>
+        </td>
+        <td>
+          <div>${esc(l.car_interest || "-")}</div>
+          <div class="muted">Budjetti: ${esc(l.budget || "-")}</div>
+          <div class="muted">Vaihto: ${esc(l.tradein || "-")}</div>
+          <div class="muted">Aika: ${esc(l.preferred_time || "-")}</div>
+        </td>
+        <td>
+          <div>${esc(l.phone || "-")}</div>
+          <div class="muted">${esc(l.email || "-")}</div>
+          <div class="muted"><a href="${esc(l.source_url || "#")}" target="_blank">Lähde</a></div>
+        </td>
+        <td>
+          <select data-id="${l.id}">
+            <option value="new"${l.status==="new"?" selected":""}>new</option>
+            <option value="contacted"${l.status==="contacted"?" selected":""}>contacted</option>
+            <option value="won"${l.status==="won"?" selected":""}>won</option>
+            <option value="lost"${l.status==="lost"?" selected":""}>lost</option>
+          </select>
+        </td>
+      `;
+      leadsTbody.appendChild(tr);
+    });
+
+    leadsTbody.querySelectorAll("select[data-id]").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        const id = sel.getAttribute("data-id");
+        const status = sel.value;
+        await fetch(`/api/admin/leads/${id}/status`, {
+          method:"POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status })
+        });
+      });
+    });
+  }
+
+  document.getElementById("refresh").addEventListener("click", loadLeads);
+  tenantSelect.addEventListener("change", loadLeads);
+
+  document.getElementById("t_add").addEventListener("click", async () => {
+    const id = document.getElementById("t_id").value.trim();
+    const name = document.getElementById("t_name").value.trim();
+    const notify_email = document.getElementById("t_email").value.trim();
+    const r = await fetch("/api/admin/tenants", {
+      method:"POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name, notify_email })
+    });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) return alert(j.error || "Virhe");
+    document.getElementById("t_id").value = "";
+    document.getElementById("t_name").value = "";
+    document.getElementById("t_email").value = "";
+    await loadTenants();
+    await loadLeads();
+  });
+
+  (async function init(){
+    await loadTenants();
+    await loadLeads();
+  })();
+</script>
+</body>
+</html>
