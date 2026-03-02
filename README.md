@@ -1,14 +1,10 @@
-auto-lead-bot/
-  package.json
-  server.js
-  db.js
-  schema.sql
-  .env.example
-  .gitignore
-  README.md
-  render.yaml
-  public/
-    widget.js
-  views/
-    admin.html
-    login.html
+# Auto Lead Bot (MVP)
+
+Autoliikkeille upotettava koeajopyyntö/liidibotti + admin-paneeli.
+
+## Local
+1. Kopioi `.env.example` -> `.env` ja täytä arvot
+2. Asenna ja käynnistä:
+   ```bash
+   npm install
+   npm start
