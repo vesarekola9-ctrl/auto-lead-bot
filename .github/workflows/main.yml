@@ -1,0 +1,6 @@
+git init
+git add .
+git commit -m "Production Supabase version"
+git branch -M main
+git remote add origin https://github.com/YOURUSER/auto-lead-bot.git
+git push -u origin main
